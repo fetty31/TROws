@@ -1,0 +1,8 @@
+prefix=/home/fetty/Escritorio/TROws/install
+
+Name: tro
+Description: Description of tro
+Version: 0.0.0
+Cflags: -I${prefix}/include
+Libs: -L${prefix}/lib -ltro
+Requires: 

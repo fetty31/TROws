@@ -1,0 +1,8 @@
+prefix=/home/fetty/Escritorio/TROws/devel
+
+Name: tro
+Description: Description of tro
+Version: 0.0.0
+Cflags: -I/home/fetty/Escritorio/TROws/src/tro/include
+Libs: -L${prefix}/lib -ltro
+Requires: 

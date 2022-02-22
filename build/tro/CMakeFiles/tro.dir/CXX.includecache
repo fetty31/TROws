@@ -1,0 +1,44 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/fetty/Escritorio/TROws/src/tro/include/TRO.hh
+iostream
+-
+fstream
+-
+string
+-
+vector
+-
+utility
+-
+stdexcept
+-
+sstream
+-
+eigen3/Eigen/Dense
+-
+kdtree.h
+/home/fetty/Escritorio/TROws/src/tro/include/kdtree.h
+
+/home/fetty/Escritorio/TROws/src/tro/include/kdtree.h
+vector
+-
+numeric
+-
+algorithm
+-
+exception
+-
+functional
+-
+
+/home/fetty/Escritorio/TROws/src/tro/src/TRO.cpp
+../include/TRO.hh
+/home/fetty/Escritorio/TROws/src/tro/include/TRO.hh
+
