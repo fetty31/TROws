@@ -13,8 +13,8 @@ void TRO::init(){
 
     // Run principal functions
     get_data();
-    // heading();
-    // get_trajectory();
+    heading();
+    get_trajectory();
     // radi_curv();
     // create_KDTree();
 
@@ -29,9 +29,10 @@ void TRO::init(){
 // get_data: read TRO.py output and transform the data to desired format
 void TRO::get_data(){
 
-    filecontent = read_csv(x_opt); 
+    MatrixXd filecontent = read_csv(x_opt); 
 
-    middlePoints = read_csv(Pmiddle);
+    MatrixXd middlePoints = read_csv(Pmiddle);
+    traj.middlePoints = middlePoints;
 
     MatrixXd Problem = read_csv(problem);
 
@@ -43,38 +44,13 @@ void TRO::get_data(){
     int idx = 0;
     int idu = 0;
 
-    Xopt.resize(n_states+n_controls,N+1);
-
-    // Initial control values
-    Xopt(0,idx) = 0;
-    Xopt(1,idx) = 0;
-
-    for(int i = 0; i < N; i++){
-
-        // // Setting Matrix<double,9,Dynamic> Xopt with optimized MPC stages calculated by TRO.py
-        // Xopt.block(0,idx,n_controls,idx+1) = filecontent.middleRows((N+1)*n_states+idu,n_controls);
-        // Xopt.block(2,idx,n_states,idx+1) = filecontent.middleRows(i*n_states                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 ,n_states);
-
-        idx++;
-        idu += 2;
-    }
-
-    // Xopt.block(0,idx,n_controls,idx+1) = filecontent.middleRows((N+1)*n_states+idu,n_controls);
-    // Xopt.block(2,idx,n_states,idx+1) = filecontent.middleRows(n_states,n_states);
-    // Xopt.block(2,idx,n_states,idx+1) = filecontent.middleRows(0,n_states);
-    cout << (N+1)*n_states+idu+n_controls << endl;
-    cout << N*n_states+n_states << endl;
-    cout << filecontent.size() << endl;
-    cout << Xopt.cols() << endl;
-    cout << idx << endl;
-
-    // for(int k = 0; k < middlePoints.rows(); k++){
-
-    //     // Setting VectorXd midX,midY with x,y coordinates of middle trajectory points
-    //     midX(k) = middlePoints(k,1);
-    //     midY(k) = middlePoints(k,2);
-
-    // }
+    // Concatenate stages in Xopt (9 x N+1)
+    Map<MatrixXd> stages(filecontent.topRows(n_states*(N+1)).data(),n_states,N+1);
+    Map<MatrixXd> control(filecontent.bottomRows(n_controls*(N+1)).data(),n_controls,N+1);
+    MatrixXd Xopt(stages.rows()+control.rows(), stages.cols());
+    Xopt << control, 
+            stages;
+    traj.Xopt = Xopt;
 
 }
 
@@ -82,6 +58,11 @@ void TRO::get_data(){
 void TRO::heading(){
     
     double xv, yv;
+    
+    VectorXd midX = traj.middlePoints.col(0);
+    VectorXd midY = traj.middlePoints.col(1);
+
+    VectorXd Pheading(midX.size()-1);
 
     for(int i = 0; i < midX.size()-1; i++){
 
@@ -90,19 +71,28 @@ void TRO::heading(){
         Pheading(i) = atan2(yv,xv);
 
     }
+    traj.Pheading = Pheading;
 
 }
 
 // get_trajectory: get x,y coordinates from calculated MPC stages (xopt) and calculate splines
 void TRO::get_trajectory(){
 
+    MatrixXd finalTraj(N,2);
+    Map<VectorXd,0,InnerStride<5> > middle_x5(traj.middlePoints.col(0).data(), N);
+    Map<VectorXd,0,InnerStride<5> > middle_y5(traj.middlePoints.col(1).data(), N);
+    Map<VectorXd,0,InnerStride<5> > Pheading5(traj.Pheading.data(), N);
+
+    // finalTraj.col(0) = traj.middlePoints.col(0) - traj.Xopt.row(4).transpose()*traj.Pheading.array().sin();
+    // finalTraj.col(1) = traj.middlePoints.col(1) - traj.Xopt.row(4).transpose()*traj.Pheading.array().cos();
+
     for(int i = 0; i < N; i++){
 
-        // calculate solution points (traj.pointsSol)
-        // look for it in GRO -- why is traj.pointsSol a matrix??
-        // What the fuck is traj.pointsTraj??
+        finalTraj(i,0) = middle_x5(i) - traj.Xopt(4,i)*sin(Pheading5(i));
+        finalTraj(i,1) = middle_y5(i) + traj.Xopt(4,i)*cos(Pheading5(i));
+        
     }
-
+    traj.pointsTraj = finalTraj;
 }
 
 // radi_curv: get curvature of trajectory
@@ -235,31 +225,6 @@ double TRO::integral_length(Vector4d coefsX, Vector4d coefsY){
     return area;
 }
 
-// template<typename M>
-// M read_csv(const std::string & path) {
-
-//     std::ifstream indata;
-//     indata.open(path);
-
-//     std::string line;
-//     std::vector<double> values;
-
-//     uint rows = 0;
-//     while (std::getline(indata, line)) {
-
-//         std::stringstream lineStream(line);
-//         std::string cell;
-
-//         while (std::getline(lineStream, cell, ',')) {
-//             values.push_back(std::stod(cell));
-//         }
-//         ++rows;
-//     }
-
-//     indata.close();
-
-//     return Map<const Matrix<typename M::Scalar, M::RowsAtCompileTime, M::ColsAtCompileTime, RowMajor>> (values.data(), rows, values.size()/rows);
-// }
 MatrixXd TRO::read_csv(const std::string filename, bool firstout){ 
 
     MatrixXd FileContent; // Eigen Matrix to store csv data
@@ -336,6 +301,32 @@ MatrixXd TRO::read_csv(const std::string filename, bool firstout){
 //     for (m = FW.begin(); m != FW.end(); m++)
 //         cout << m->first << "-> "
 //              << m->second << "\n";
+// }
+
+// template<typename M>
+// M read_csv(const std::string & path) {
+
+//     std::ifstream indata;
+//     indata.open(path);
+
+//     std::string line;
+//     std::vector<double> values;
+
+//     uint rows = 0;
+//     while (std::getline(indata, line)) {
+
+//         std::stringstream lineStream(line);
+//         std::string cell;
+
+//         while (std::getline(lineStream, cell, ',')) {
+//             values.push_back(std::stod(cell));
+//         }
+//         ++rows;
+//     }
+
+//     indata.close();
+
+//     return Map<const Matrix<typename M::Scalar, M::RowsAtCompileTime, M::ColsAtCompileTime, RowMajor>> (values.data(), rows, values.size()/rows);
 // }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////

@@ -24,14 +24,19 @@ class Point : public std::array<float,2> {
 // Optimized trajectory struct
 struct trajectory {
 
-    MatrixXd Pleft, Pright; // Gates
     int N; // Dimension
-    MatrixXd pointsSol, coefsSplinesTrajX, coefsSplinesTrajY;// Points of the minimum curvature trajectory solution and its coefficients of the splines
+
+    MatrixXd pointsTraj, coefsSplinesTrajX, coefsSplinesTrajY;// Optimized trajectory points and its coefficients of the splines
+    MatrixXd middlePoints; // Central trajectory points
+    MatrixXd Xopt; // Optimized stages (9xN)
+
+    VectorXd Pheading; // Heading of central trajectory
     VectorXd splinesLengths; // Length of every spline
     VectorXd radiCurv; // Curvature of the trajectory
-    VectorXd freeL, freeR; // Space from the pointTraj to the limit of the track, left and right
-    MatrixXd pointsTraj; 
-    VectorXd velocity; // Velocity profile
+    VectorXd freeL, freeR; // Space from the pointsTraj to the limit of the track, left and right
+    VectorXd Vx; // Vx profile
+    VectorXd Vy; // Vy profile
+    VectorXd w; // Yaw rate profile
     kdt::KDTree<Point> trajTree; // KDTree for the planner 
 
 };
@@ -42,13 +47,6 @@ class TRO{
     private:
 
         // Internal variables of TRO
-        MatrixXd filecontent; // Eigen Matrix to store file content
-        MatrixXd Xopt; // Matrix to store MPC stages
-        MatrixXd middlePoints; // Matrix to store middle path trajectory
-
-        VectorXd midX; // Middle trajectory x coord
-        VectorXd midY; // Middle trajectory y coord
-        VectorXd Pheading; // Heading of points from middle trajectory
 
         const std::string x_opt = "/home/fetty/Escritorio/LaptimeSimulator/TROpy/x_opt.csv"; // Output (optimized stages) of TRO.py
         const std::string problem = "/home/fetty/Escritorio/LaptimeSimulator/TROpy/problem.csv"; // Problem characteristics of TRO.py
