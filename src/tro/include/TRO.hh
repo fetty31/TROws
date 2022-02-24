@@ -9,6 +9,11 @@
 #include <stdexcept> // std::runtime_error
 #include <sstream> // std::stringstream
 #include <eigen3/Eigen/Dense>
+// #include "nav_msgs/Path.h"
+// #include "dv_msgs/ObjectiveArray.h"
+// #include "dv_msgs/ObjectiveArrayCurv.h"
+// #include "dv_msgs/CarState.h"
+// #include "dv_msgs/ConeArrayOrdered.h"
 #include "kdtree.h"
 
 
@@ -24,10 +29,11 @@ class Point : public std::array<float,2> {
 // Optimized trajectory struct
 struct trajectory {
 
-    int N; // Dimension
+    int dimension; // Number of points interpolated with splines
 
-    MatrixXd pointsTraj, coefsSplinesTrajX, coefsSplinesTrajY;// Optimized trajectory points and its coefficients of the splines
+    MatrixXd pointsSol, coefsSplinesTrajX, coefsSplinesTrajY;// Optimized trajectory points and its coefficients of the splines
     MatrixXd middlePoints; // Central trajectory points
+    MatrixXd pointsTraj; // Optimized trajectory points with MPC spacing
     MatrixXd Xopt; // Optimized stages (9xN)
 
     VectorXd Pheading; // Heading of central trajectory
@@ -56,19 +62,27 @@ class TRO{
         int n_controls = 2; // Number of controls variables
         int N;
         int Npar;
+        int steps = 2000; // How many steps are sent to the mpc (including the actual state)
 
         double T;
+        double spacing = 0.025;
 
         void get_data();
         void heading();
         void get_trajectory();
         void radi_curv();
         void create_KDTree();
-        MatrixXd coefs_splines(VectorXd x);
-        VectorXd polyval(Vector4d coeffs, VectorXd t);
+
         double polyval2(Vector4d coeffs, double t);
         double integral_length(Vector4d coefsX, Vector4d coefsY);
-        MatrixXd read_csv(const std::string filename, bool firstout = true); 
+
+        VectorXd polyval(Vector4d coeffs, VectorXd t);
+        
+        MatrixXd coefs_splines(VectorXd x);
+        MatrixXd read_csv(const std::string filename, bool firstout = true);
+        // MatrixXd planning_curv(const dv_msgs::CarState::ConstPtr &data);
+
+        // dv_msgs::ObjectiveArrayCurv TRO::plannerGRO_curv(const dv_msgs::CarState::ConstPtr &data)
 
     public:
 
