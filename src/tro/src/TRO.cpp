@@ -1,5 +1,4 @@
 #include "../include/TRO.hh"
-#include <chrono>
 
 using namespace std::chrono;
 using namespace std;
@@ -11,8 +10,7 @@ TRO::TRO(){}
 // Initialization of TRO
 void TRO::init(){
 
-    auto start_time = high_resolution_clock::now();
-    // auto start_time = std::chrono::system_clock::now();
+    auto start_time = std::chrono::system_clock::now();
 
     // Run principal functions
     get_data();
@@ -21,14 +19,19 @@ void TRO::init(){
     radi_curv();
     create_KDTree();
 
-    auto end_time = high_resolution_clock::now();
-    auto duration = duration_cast<seconds>(end_time-start_time);
+    // Running flag set to true
+    isRun = true;
 
-    // auto end_time = std::chrono::system_clock::now();
-    // std::chrono::duration<double> elapsed = end_time - start_time;
-    // cout << elapsed << endl;
+    auto end_time = std::chrono::system_clock::now();
+    std::chrono::duration<double> elapsed = end_time - start_time;
+    // ROS_WARN( "GRO ELAPSED TIME: %f ms", elapsed.count() *1000);
+    cout << elapsed.count() << endl;
 
-    cout << duration.count() << endl;
+}
+
+// Return flag, useful for planner
+bool TRO::isRunning(){
+    return this->isRun;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -43,6 +46,9 @@ void TRO::get_data(){
     traj.middlePoints = middlePoints;
 
     MatrixXd Problem = read_csv(problem);
+
+    MatrixXd FreeSpace = read_csv(freeSpace);
+    traj.centralFree = FreeSpace;
 
     N = Problem(0,0);
     Npar = Problem(2,0);
@@ -83,16 +89,19 @@ void TRO::heading(){
 
 }
 
-// get_trajectory: get x,y coordinates from calculated MPC stages (xopt) and calculate splines
+// get_trajectory: get x,y coordinates from calculated MPC stages (xopt) and interpolate splines
 void TRO::get_trajectory(){
 
     traj.dimension = N/5;
 
     MatrixXd finalTraj(N,2);
+    VectorXd FreeR(N), FreeL(N);
     Map<VectorXd,0,InnerStride<5> > middle_x5(traj.middlePoints.col(0).data(), N);
     Map<VectorXd,0,InnerStride<5> > middle_y5(traj.middlePoints.col(1).data(), N);
+    Map<VectorXd,0,InnerStride<5> > freeR(traj.centralFree.col(0).data(), N);
+    Map<VectorXd,0,InnerStride<5> > freeL(traj.centralFree.col(1).data(), N);
     Map<VectorXd,0,InnerStride<5> > Pheading5(traj.Pheading.data(), N);
-
+    
     // finalTraj.col(0) = traj.middlePoints.col(0) - traj.Xopt.row(4).transpose()*traj.Pheading.array().sin();
     // finalTraj.col(1) = traj.middlePoints.col(1) - traj.Xopt.row(4).transpose()*traj.Pheading.array().cos();
 
@@ -100,10 +109,14 @@ void TRO::get_trajectory(){
 
         finalTraj(i,0) = middle_x5(i) - traj.Xopt(4,i)*sin(Pheading5(i));
         finalTraj(i,1) = middle_y5(i) + traj.Xopt(4,i)*cos(Pheading5(i));
+        FreeR(i) = traj.Xopt(4,i) + freeR(i);
+        FreeL(i) = -traj.Xopt(4,i) + freeL(i);
         
     }
-    traj.pointsSol = finalTraj;
-    Map<MatrixXd,0,InnerStride<5> > pointsSol5(traj.pointsSol.data(),traj.dimension,2);
+    traj.pointsSol = finalTraj; // Optimized trajectory with N points 
+    traj.freeL = FreeL;
+    traj.freeR = FreeR;
+    Map<MatrixXd,0,InnerStride<5> > pointsSol5(traj.pointsSol.data(),traj.dimension,2); // Reduce number of points in order to compute splines faster
 
     // Getting the splines coefficients of the optimized trajectory
     traj.coefsSplinesTrajX = coefs_splines(pointsSol5.col(0));
@@ -127,10 +140,22 @@ void TRO::radi_curv(){
     // This is the aproximated dimension that will have the vectors
     int aproxL = (int) (traj.splinesLengths.sum()/(this->spacing)) + traj.dimension; 
 
-    // Initializing points and radius
+    // Initializing points, radius, fL, fR, Vx, Vy, w
     MatrixXd points(aproxL, 2);
-    VectorXd radius(aproxL), fL(aproxL), fR(aproxL);
-    RowVectorXd pLR;
+    VectorXd radius(aproxL);
+    VectorXd fL(aproxL), fR(aproxL), VX(aproxL), VY(aproxL), W(aproxL);
+
+    // Setting freeR, freeL to have size = traj.dimension
+    Map<VectorXd,0,InnerStride<5> > freeL5(traj.freeL.data(), traj.dimension);
+    Map<VectorXd,0,InnerStride<5> > freeR5(traj.freeR.data(), traj.dimension);
+
+    // Setting optimized stages for MPC to have size = traj.dimension
+    VectorXd vx = traj.Xopt.row(6);
+    VectorXd vy = traj.Xopt.row(7);
+    VectorXd ww = traj.Xopt.row(8);
+    Map<VectorXd,0,InnerStride<5> > Vx(vx.data(), traj.dimension);
+    Map<VectorXd,0,InnerStride<5> > Vy(vy.data(), traj.dimension);
+    Map<VectorXd,0,InnerStride<5> > w(ww.data(), traj.dimension);
 
     for(int i=0; i < traj.dimension; i++){
 
@@ -143,7 +168,7 @@ void TRO::radi_curv(){
         by = traj.coefsSplinesTrajY(i,2);
 
         // Number of points per spline
-        numberPointsPerSpline = (int) (traj.splinesLengths(i) / (this->spacing)); 
+        numberPointsPerSpline = (int) (traj.splinesLengths(i) / (this->spacing));
 
         // Parametrization of the spline, numberPointsPerSpline between 0 and almost 1:
         VectorXd t = VectorXd::LinSpaced(numberPointsPerSpline, 0, 1-1/(double)numberPointsPerSpline);
@@ -154,31 +179,27 @@ void TRO::radi_curv(){
 
         // Curvature radius formula:
         for(int j=0; j<numberPointsPerSpline; j++){
+
             radius(totalPoints + j) = pow(sqrt(pow(3*dx*pow(t(j),2)+2*cx*t(j)+bx, 2) + pow(3*dy*pow(t(j),2)+2*cy*t(j)+by, 2)), 3) / ((3*dx*pow(t(j),2)+2*cx*t(j)+bx)*(6*dy*t(j)+2*cy) - (3*dy*pow(t(j),2)+2*cy*t(j)+by)*(6*dx*t(j)+2*cx));
+
+            // We suppose freeR, freeL stay constant over points in the same spline (polynomial)
+            fL(totalPoints + j) = freeL5(i);
+            fR(totalPoints + j) = freeR5(i);
+
+            // We suppose Vx,Vy,w stay constant over points in the same spline (polynomial)
+            VX(totalPoints + j) = Vx(i);
+            VY(totalPoints + j) = Vy(i);
+            W(totalPoints + j) = w(i);
         }
-
-        // // Both sides of the track. Here is calculated the free space towards the left and towards the right
-        // for(int j=0; j<numberPointsPerSpline; j++){
-
-        //     // Left side
-        //     pLR = (t(j)*traj.Pleft.row((i+1)%traj.N) + (1-t(j))*traj.Pleft.row(i));
-        //     fL(totalPoints + j) = (pLR - points.row(totalPoints + j)).norm();
-
-        //     // Right side
-        //     pLR = (t(j)*traj.Pright.row((i+1)%traj.N) + (1-t(j))*traj.Pright.row(i));
-        //     fR(totalPoints + j) = (pLR - points.row(totalPoints + j)).norm();
-
-        // }
 
         totalPoints += numberPointsPerSpline;
     }
 
-    // Now it is known the exact value of the size of the vector, it is resized (last empty places are removed)
+    // Now that it is known the exact value of the size of the vector, they are resized (last empty places are removed)
     traj.radiCurv = radius.head(totalPoints);
     traj.pointsTraj = points.topRows(totalPoints);
-
-    // traj.freeL = fl;
-    // traj.freeR = fr;
+    traj.freeL = fL.head(totalPoints); traj.freeR = fR.head(totalPoints);
+    traj.Vx = VX.head(totalPoints); traj.Vy = VY.head(totalPoints); traj.w = W.head(totalPoints);
 
 }
 
@@ -307,6 +328,7 @@ double TRO::integral_length(Vector4d coefsX, Vector4d coefsY){
     return area;
 }
 
+// read_csv files (firstout argument is used to avoid first column of indexes)
 MatrixXd TRO::read_csv(const std::string filename, bool firstout){ 
 
     MatrixXd FileContent; // Eigen Matrix to store csv data
@@ -395,14 +417,14 @@ MatrixXd TRO::read_csv(const std::string filename, bool firstout){
 //------------------------Planner functions--------------------------------------------------
 
 // // Main function of the planner: creates the message and returns it.
-// dv_msgs::ObjectiveArrayCurv TRO::plannerGRO_curv(const dv_msgs::CarState::ConstPtr &data){
+// dv_msgs::ObjectiveArrayCurv TRO::plannerTRO(const dv_msgs::CarState::ConstPtr &data){
 
 //     // Create message
 //     dv_msgs::ObjectiveArrayCurv msg;
 //     msg.header = data->header;
 
 //     // Planning
-//     MatrixXd plan = planning_curv(data);
+//     MatrixXd plan = planning(data);
 
 //     // Fill the message
 //     for(int i=0; i < steps; i++){
@@ -428,7 +450,7 @@ MatrixXd TRO::read_csv(const std::string filename, bool firstout){
 
 
 // // Auxiliar function of the planner: creates the plan matrix of the MPC-Curv dimensions.
-// MatrixXd TRO::planning_curv(const dv_msgs::CarState::ConstPtr &data){
+// MatrixXd TRO::planning(const dv_msgs::CarState::ConstPtr &data){
     
 //     // Actual position of the car
 //     Point state;
