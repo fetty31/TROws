@@ -6,15 +6,16 @@
 #include <string>
 #include <vector>
 #include <chrono>
-#include <utility> // std::pair
+#include <ros/ros.h>
+// #include <utility> // std::pair
 #include <stdexcept> // std::runtime_error
 #include <sstream> // std::stringstream
 #include <eigen3/Eigen/Dense>
-// #include "nav_msgs/Path.h"
-// #include "dv_msgs/ObjectiveArray.h"
-// #include "dv_msgs/ObjectiveArrayCurv.h"
-// #include "dv_msgs/CarState.h"
-// #include "dv_msgs/ConeArrayOrdered.h"
+#include "nav_msgs/Path.h"
+#include "dv_msgs/ObjectiveArray.h"
+#include "dv_msgs/ObjectiveArrayCurv.h"
+#include "dv_msgs/CarState.h"
+#include "dv_msgs/ConeArrayOrdered.h"
 #include "kdtree.h"
 
 
@@ -56,10 +57,10 @@ class TRO{
 
         // Internal variables of TRO
 
-        const std::string x_opt = "/home/fetty/Escritorio/LaptimeSimulator/TROpy/x_opt.csv"; // Output (optimized stages) of TRO.py
-        const std::string problem = "/home/fetty/Escritorio/LaptimeSimulator/TROpy/problem.csv"; // Problem characteristics of TRO.py
-        const std::string Pmiddle = "/home/fetty/Escritorio/LaptimeSimulator/TROpy/filtered_points.csv"; // Middle trajectory of TRO.py
-        const std::string freeSpace = "/home/fetty/Escritorio/LaptimeSimulator/TROpy/freeSpace.csv"; // freeR, freeL from middle trajectory of TRO.py
+        const std::string x_opt = "/home/fetty/Escritorio/control_ws2021/src/control/tro/TROpy/x_opt.csv"; // Output (optimized stages) of TRO.py
+        const std::string problem = "/home/fetty/Escritorio/control_ws2021/src/control/tro/TROpy/problem.csv"; // Problem characteristics of TRO.py
+        const std::string Pmiddle = "/home/fetty/Escritorio/control_ws2021/src/control/tro/TROpy/filtered_points.csv"; // Middle trajectory of TRO.py
+        const std::string freeSpace = "/home/fetty/Escritorio/control_ws2021/src/control/tro/TROpy/freeSpace.csv"; // freeR, freeL from middle trajectory of TRO.py
 
         int n_states = 7; // Number of states variables
         int n_controls = 2; // Number of controls variables
@@ -85,14 +86,15 @@ class TRO{
         
         MatrixXd coefs_splines(VectorXd x);
         MatrixXd read_csv(const std::string filename, bool firstout = true);
-        // MatrixXd planning(const dv_msgs::CarState::ConstPtr &data);
+        MatrixXd planning(const dv_msgs::CarState::ConstPtr &data);
 
     public:
 
         TRO(); // Constructor
         void init(); // Initialization function
         bool isRunning(); // Flag
-        // dv_msgs::ObjectiveArrayCurv TRO::plannerTRO(const dv_msgs::CarState::ConstPtr &data)
+        dv_msgs::ObjectiveArrayCurv plannerTRO(const dv_msgs::CarState::ConstPtr &data);
+        nav_msgs::Path get_path();
 
         // Optimized trajectory data
         trajectory traj = trajectory();

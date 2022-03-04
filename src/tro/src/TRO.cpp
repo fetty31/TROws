@@ -1,6 +1,5 @@
 #include "../include/TRO.hh"
 
-using namespace std::chrono;
 using namespace std;
 using namespace Eigen;
 
@@ -24,8 +23,8 @@ void TRO::init(){
 
     auto end_time = std::chrono::system_clock::now();
     std::chrono::duration<double> elapsed = end_time - start_time;
-    // ROS_WARN( "GRO ELAPSED TIME: %f ms", elapsed.count() *1000);
-    cout << elapsed.count() << endl;
+    ROS_WARN( "TRO ELAPSED TIME: %f ms", elapsed.count()*1000);
+    // cout << elapsed.count() << endl;
 
 }
 
@@ -416,69 +415,91 @@ MatrixXd TRO::read_csv(const std::string filename, bool firstout){
 ///////////////////////////////////////////////////////////////////////////////////////////////
 //------------------------Planner functions--------------------------------------------------
 
-// // Main function of the planner: creates the message and returns it.
-// dv_msgs::ObjectiveArrayCurv TRO::plannerTRO(const dv_msgs::CarState::ConstPtr &data){
+// Main function of the planner: creates the message and returns it.
+dv_msgs::ObjectiveArrayCurv TRO::plannerTRO(const dv_msgs::CarState::ConstPtr &data){
 
-//     // Create message
-//     dv_msgs::ObjectiveArrayCurv msg;
-//     msg.header = data->header;
+    // Create message
+    dv_msgs::ObjectiveArrayCurv msg;
+    msg.header = data->header;
 
-//     // Planning
-//     MatrixXd plan = planning(data);
+    // Planning
+    MatrixXd plan = planning(data);
 
-//     // Fill the message
-//     for(int i=0; i < steps; i++){
-//         dv_msgs::ObjectiveCurv objective = dv_msgs::ObjectiveCurv();
+    // Fill the message
+    for(int i=0; i < steps; i++){
+        dv_msgs::ObjectiveCurv objective = dv_msgs::ObjectiveCurv();
 
-//         objective.x = plan(i,0);
-//         objective.y = plan(i,1);
-//         objective.s = plan(i,2);
-//         objective.k = plan(i,3);
-//         objective.vx = plan(i,4);
-//         objective.vy = plan(i,5);
-//         objective.w = plan(i,6);
-//         objective.L = plan(i,7);
-//         objective.R = plan(i,8);
+        objective.x = plan(i,0);
+        objective.y = plan(i,1);
+        objective.s = plan(i,2);
+        objective.k = plan(i,3);
+        objective.vx = plan(i,4);
+        objective.vy = plan(i,5);
+        objective.w = plan(i,6);
+        objective.L = plan(i,7);
+        objective.R = plan(i,8);
         
-//         msg.objectives.push_back(objective);
-//     }
+        msg.objectives.push_back(objective);
+    }
 
-//     msg.smax = traj.pointsTraj.rows() * spacing;
+    msg.smax = traj.pointsTraj.rows() * spacing;
 
-//     return msg;
-// }
+    return msg;
+}
 
 
-// // Auxiliar function of the planner: creates the plan matrix of the MPC-Curv dimensions.
-// MatrixXd TRO::planning(const dv_msgs::CarState::ConstPtr &data){
+// Auxiliar function of the planner: creates the plan matrix of the MPC-Curv dimensions.
+MatrixXd TRO::planning(const dv_msgs::CarState::ConstPtr &data){
     
-//     // Actual position of the car
-//     Point state;
-//     state[0] = data->ekf.position.x;
-//     state[1] = data->ekf.position.y;
+    // Actual position of the car
+    Point state;
+    state[0] = data->ekf.position.x;
+    state[1] = data->ekf.position.y;
 
-//     // Search the nearest point of the trajectory
-//     int nnid = traj.trajTree.nnSearch(state);
+    // Search the nearest point of the trajectory
+    int nnid = traj.trajTree.nnSearch(state);
 
-//     // Initialize planning matrix
-//     MatrixXd plan(steps, 9); // [x, y, s, k, vx, vy, w, L, R]
+    // Initialize planning matrix
+    MatrixXd plan(steps, 9); // [x, y, s, k, vx, vy, w, L, R]
 
-//     // All steps
-//     for(int i=0; i < steps; i++){
-//         if(nnid >= traj.pointsTraj.rows()) nnid -= traj.pointsTraj.rows();
+    // All steps
+    for(int i=0; i < steps; i++){
+        if(nnid >= traj.pointsTraj.rows()) nnid -= traj.pointsTraj.rows(); // restart loop 
 
-//         plan(i,0) = traj.pointsTraj(nnid,0);
-//         plan(i,1) = traj.pointsTraj(nnid,1);
-//         plan(i,2) = nnid*spacing;
-//         plan(i,3) = 1/traj.radiCurv(nnid);
-//         plan(i,4) = traj.Xopt(6,nnid);
-//         plan(i,5) = traj.Xopt(7,nnid);
-//         plan(i,6) = traj.Xopt(8,nnid);
-//         plan(i,7) = traj.freeL(nnid);
-//         plan(i,8) = traj.freeR(nnid);
+        plan(i,0) = traj.pointsTraj(nnid,0);
+        plan(i,1) = traj.pointsTraj(nnid,1);
+        plan(i,2) = nnid*spacing;
+        plan(i,3) = 1/traj.radiCurv(nnid);
+        plan(i,4) = traj.Vx(nnid);
+        plan(i,5) = traj.Vy(nnid);
+        plan(i,6) = traj.w(nnid);
+        plan(i,7) = traj.freeL(nnid);
+        plan(i,8) = traj.freeR(nnid);
 
-//         nnid++;
-//     }
+        nnid++;
+    }
 
-//     return plan;
-// }
+    return plan;
+}
+
+// Visualization function that creates the message to plot the trajectory in RVIZ
+nav_msgs::Path TRO::get_path(){
+
+    // Init message:
+    nav_msgs::Path pathMsg;
+	geometry_msgs::PoseStamped pose;
+
+    pathMsg.header.stamp = ros::Time::now();
+    pathMsg.header.frame_id = "global";
+
+    for(unsigned int i = 0; i < traj.pointsTraj.rows(); i++ ){
+
+        pose.pose.position.x = traj.pointsTraj(i, 0);
+        pose.pose.position.y = traj.pointsTraj(i, 1);
+
+        pathMsg.poses.push_back(pose);
+        
+    }
+
+    return pathMsg;
+}
