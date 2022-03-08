@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
   std_msgs
+  dv_msgs
 )
 
 find_package(Eigen3 REQUIRED)
@@ -19,7 +20,7 @@ find_package(Eigen3 REQUIRED)
 
 find_path(CASADI_INCLUDE_DIR
   casadi/casadi.hpp
-  HINTS /home/fetty/Escritorio/LaptimeSimulator/LapTime_2021_22/CASADI/include/
+  HINTS $ENV{CONTROL_WS}/src/control/tro/CASADI/include/
 )
 
 if(CASADI_INCLUDE_DIR)
@@ -36,7 +37,7 @@ endif()
 
 find_library(CASADI_LIBRARY 
     NAMES casadi 
-    PATHS /home/fetty/Escritorio/LaptimeSimulator/LapTime_2021_22/CASADI/#lib/
+    PATHS $ENV{CONTROL_WS}/src/control/tro/CASADI/#lib/
     )
 if(CASADI_LIBRARY)
     set(CASADI_LIBRARIES ${CASADI_LIBRARIES} ${CASADI_LIBRARY})
