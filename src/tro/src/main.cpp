@@ -50,8 +50,10 @@ int main(int argc, char **argv){
     troPath = nh.advertise<nav_msgs::Path>("/gro/path", 1); // Visualization purposes only
     troPlanner = nh.advertise<dv_msgs::ObjectiveArrayCurv>("/gro/planner/curv", 1);
 
-    // TROobject.init();
-    // cout << "tot ok" <<endl;
+    TROobject.init();
+    ros::Duration(2).sleep(); // sleep for 2 seconds
+    troPath.publish(TROobject.get_path());
+    cout << "tot ok" <<endl;
 
     ros::spin();
 

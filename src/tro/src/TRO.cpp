@@ -18,6 +18,8 @@ void TRO::init(){
     radi_curv();
     create_KDTree();
 
+    cout << traj.pointsTraj.rows() << endl;  
+
     // Running flag set to true
     isRun = true;
 
@@ -39,27 +41,27 @@ bool TRO::isRunning(){
 // get_data: read TRO.py output and transform the data to desired format
 void TRO::get_data(){
 
-    MatrixXd filecontent = read_csv(x_opt); 
+    MatrixXd problem = read_csv(problemPath);
 
-    MatrixXd middlePoints = read_csv(Pmiddle);
+    N = problem(0,0);
+    Npar = problem(2,0);
+    T = problem(1,0);
+
+    MatrixXd optimized = read_csv(optimizedPath); 
+
+    MatrixXd middlePoints = read_csv(middlePointsPath);
     traj.middlePoints = middlePoints;
 
-    MatrixXd Problem = read_csv(problem);
-
-    MatrixXd FreeSpace = read_csv(freeSpace);
-    traj.centralFree = FreeSpace;
-
-    N = Problem(0,0);
-    Npar = Problem(2,0);
-    T = Problem(1,0);
+    MatrixXd freeSpace = read_csv(freeSpacePath);
+    traj.centralFree = freeSpace;
 
     // Index variables
     int idx = 0;
     int idu = 0;
 
-    // Concatenate stages in Xopt (9 x N+1)
-    Map<MatrixXd> stages(filecontent.topRows(n_states*(N+1)).data(),n_states,N+1);
-    Map<MatrixXd> control(filecontent.bottomRows(n_controls*(N+1)).data(),n_controls,N+1);
+    // Concatenate optimized stages in Xopt ( 9*(N+1) x 1) --> (9 x N+1) )
+    Map<MatrixXd> stages(optimized.topRows(n_states*(N+1)).data(),n_states,N+1);
+    Map<MatrixXd> control(optimized.bottomRows(n_controls*(N+1)).data(),n_controls,N+1);
     MatrixXd Xopt(stages.rows()+control.rows(), stages.cols());
     Xopt << control, 
             stages;
@@ -91,23 +93,22 @@ void TRO::heading(){
 // get_trajectory: get x,y coordinates from calculated MPC stages (xopt) and interpolate splines
 void TRO::get_trajectory(){
 
-    traj.dimension = N/5;
-
     MatrixXd finalTraj(N,2);
     VectorXd FreeR(N), FreeL(N);
-    Map<VectorXd,0,InnerStride<5> > middle_x5(traj.middlePoints.col(0).data(), N);
-    Map<VectorXd,0,InnerStride<5> > middle_y5(traj.middlePoints.col(1).data(), N);
-    Map<VectorXd,0,InnerStride<5> > freeR(traj.centralFree.col(0).data(), N);
-    Map<VectorXd,0,InnerStride<5> > freeL(traj.centralFree.col(1).data(), N);
-    Map<VectorXd,0,InnerStride<5> > Pheading5(traj.Pheading.data(), N);
+    const int midTrajStride= T/Tmiddle;
+    Map<VectorXd,0,InnerStride<> > middle_xN(traj.middlePoints.col(0).data(), N, InnerStride<>(midTrajStride));
+    Map<VectorXd,0,InnerStride<> > middle_yN(traj.middlePoints.col(1).data(), N, InnerStride<>(midTrajStride));
+    Map<VectorXd,0,InnerStride<> > freeR(traj.centralFree.col(0).data(), N, InnerStride<>(midTrajStride));
+    Map<VectorXd,0,InnerStride<> > freeL(traj.centralFree.col(1).data(), N, InnerStride<>(midTrajStride));
+    Map<VectorXd,0,InnerStride<> > PheadingN(traj.Pheading.data(), N, InnerStride<>(midTrajStride));
     
     // finalTraj.col(0) = traj.middlePoints.col(0) - traj.Xopt.row(4).transpose()*traj.Pheading.array().sin();
     // finalTraj.col(1) = traj.middlePoints.col(1) - traj.Xopt.row(4).transpose()*traj.Pheading.array().cos();
 
     for(int i = 0; i < N; i++){
 
-        finalTraj(i,0) = middle_x5(i) - traj.Xopt(4,i)*sin(Pheading5(i));
-        finalTraj(i,1) = middle_y5(i) + traj.Xopt(4,i)*cos(Pheading5(i));
+        finalTraj(i,0) = middle_xN(i) - traj.Xopt(4,i)*sin(PheadingN(i));
+        finalTraj(i,1) = middle_yN(i) + traj.Xopt(4,i)*cos(PheadingN(i));
         FreeR(i) = traj.Xopt(4,i) + freeR(i);
         FreeL(i) = -traj.Xopt(4,i) + freeL(i);
         
@@ -115,11 +116,13 @@ void TRO::get_trajectory(){
     traj.pointsSol = finalTraj; // Optimized trajectory with N points 
     traj.freeL = FreeL;
     traj.freeR = FreeR;
-    Map<MatrixXd,0,InnerStride<5> > pointsSol5(traj.pointsSol.data(),traj.dimension,2); // Reduce number of points in order to compute splines faster
+
+    traj.dimension = N/splinesStride; // Spline dimension (n polynomials/splines)
+    Map<MatrixXd,0,InnerStride<> > pointsSolN(traj.pointsSol.data(), traj.dimension, 2, InnerStride<>(splinesStride)); // Reduce number of points in order to compute splines faster
 
     // Getting the splines coefficients of the optimized trajectory
-    traj.coefsSplinesTrajX = coefs_splines(pointsSol5.col(0));
-    traj.coefsSplinesTrajY = coefs_splines(pointsSol5.col(1));
+    traj.coefsSplinesTrajX = coefs_splines(pointsSolN.col(0)); // pointsSolN
+    traj.coefsSplinesTrajY = coefs_splines(pointsSolN.col(1));
 
     // Getting the length of every spline of the trajectory
     traj.splinesLengths = VectorXd(traj.dimension);
@@ -145,16 +148,13 @@ void TRO::radi_curv(){
     VectorXd fL(aproxL), fR(aproxL), VX(aproxL), VY(aproxL), W(aproxL);
 
     // Setting freeR, freeL to have size = traj.dimension
-    Map<VectorXd,0,InnerStride<5> > freeL5(traj.freeL.data(), traj.dimension);
-    Map<VectorXd,0,InnerStride<5> > freeR5(traj.freeR.data(), traj.dimension);
+    Map<VectorXd,0,InnerStride<> > freeL5(traj.freeL.data(), traj.dimension, InnerStride<>(splinesStride));
+    Map<VectorXd,0,InnerStride<> > freeR5(traj.freeR.data(), traj.dimension, InnerStride<>(splinesStride));
 
     // Setting optimized stages for MPC to have size = traj.dimension
-    VectorXd vx = traj.Xopt.row(6);
-    VectorXd vy = traj.Xopt.row(7);
-    VectorXd ww = traj.Xopt.row(8);
-    Map<VectorXd,0,InnerStride<5> > Vx(vx.data(), traj.dimension);
-    Map<VectorXd,0,InnerStride<5> > Vy(vy.data(), traj.dimension);
-    Map<VectorXd,0,InnerStride<5> > w(ww.data(), traj.dimension);
+    Map<VectorXd,0,InnerStride<> > Vx(traj.Xopt.row(6).data(), traj.dimension, InnerStride<>(splinesStride));
+    Map<VectorXd,0,InnerStride<> > Vy(traj.Xopt.row(7).data(), traj.dimension, InnerStride<>(splinesStride));
+    Map<VectorXd,0,InnerStride<> > w(traj.Xopt.row(8).data(), traj.dimension, InnerStride<>(splinesStride));
 
     for(int i=0; i < traj.dimension; i++){
 
@@ -332,6 +332,7 @@ MatrixXd TRO::read_csv(const std::string filename, bool firstout){
 
     MatrixXd FileContent; // Eigen Matrix to store csv data
     std::vector<std::vector<double>> result; // Vector of vectors to store each line content
+    // result.reserve(4000)
 
     // Create an input filestream
     std::ifstream myFile(filename);
